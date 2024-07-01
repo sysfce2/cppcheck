@@ -45,8 +45,8 @@
 
 namespace {
     struct ForwardTraversal {
-        enum class Progress { Continue, Break, Skip };
-        enum class Terminate { None, Bail, Inconclusive };
+        enum class Progress : std::uint8_t { Continue, Break, Skip };
+        enum class Terminate : std::uint8_t { None, Bail, Inconclusive };
         ForwardTraversal(const ValuePtr<Analyzer>& analyzer, const TokenList& tokenList, ErrorLogger& errorLogger, const Settings& settings)
             : analyzer(analyzer), tokenList(tokenList), errorLogger(errorLogger), settings(settings)
         {}
@@ -336,7 +336,7 @@ namespace {
             return r;
         }
 
-        enum class Status {
+        enum class Status : std::uint8_t {
             None,
             Inconclusive,
         };
@@ -614,7 +614,7 @@ namespace {
                     const Scope* scope = tok->scope();
                     if (!scope)
                         return Break();
-                    if (contains({Scope::eDo, Scope::eFor, Scope::eWhile, Scope::eIf, Scope::eElse}, scope->type)) {
+                    if (contains({Scope::eDo, Scope::eFor, Scope::eWhile, Scope::eIf, Scope::eElse, Scope::eSwitch}, scope->type)) {
                         const bool inElse = scope->type == Scope::eElse;
                         const bool inDoWhile = scope->type == Scope::eDo;
                         const bool inLoop = contains({Scope::eDo, Scope::eFor, Scope::eWhile}, scope->type);
@@ -811,6 +811,7 @@ namespace {
                 } else if (Token::simpleMatch(tok, "switch (")) {
                     if (updateRecursive(tok->next()->astOperand2()) == Progress::Break)
                         return Break();
+                    actions |= Analyzer::Action::Write; // bailout for switch scope
                     return Break();
                 } else if (Token* callTok = callExpr(tok)) {
                     // TODO: Dont traverse tokens a second time

@@ -119,7 +119,8 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     mPlatformActions(new QActionGroup(this)),
     mCStandardActions(new QActionGroup(this)),
     mCppStandardActions(new QActionGroup(this)),
-    mSelectLanguageActions(new QActionGroup(this))
+    mSelectLanguageActions(new QActionGroup(this)),
+    mSelectReportActions(new QActionGroup(this))
 {
     {
         Settings tempSettings;
@@ -200,6 +201,15 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     connect(mUI->mResults, &ResultsView::suppressIds, this, &MainWindow::suppressIds);
     connect(mUI->mMenuView, &QMenu::aboutToShow, this, &MainWindow::aboutToShowViewMenu);
 
+    // Change report type
+    connect(mUI->mActionReportNormal, &QAction::triggered, this, &MainWindow::changeReportType);
+    connect(mUI->mActionReportAutosar, &QAction::triggered, this, &MainWindow::changeReportType);
+    connect(mUI->mActionReportCertC, &QAction::triggered, this, &MainWindow::changeReportType);
+    connect(mUI->mActionReportCertCpp, &QAction::triggered, this, &MainWindow::changeReportType);
+    connect(mUI->mActionReportMisraC, &QAction::triggered, this, &MainWindow::changeReportType);
+    connect(mUI->mActionReportMisraCpp2008, &QAction::triggered, this, &MainWindow::changeReportType);
+    connect(mUI->mActionReportMisraCpp2023, &QAction::triggered, this, &MainWindow::changeReportType);
+
     // File menu
     connect(mUI->mActionNewProjectFile, &QAction::triggered, this, &MainWindow::newProjectFile);
     connect(mUI->mActionOpenProjectFile, &QAction::triggered, this, &MainWindow::openProjectFile);
@@ -261,6 +271,14 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
         connect(action, SIGNAL(triggered()), this, SLOT(selectPlatform()));
     }
 
+    mUI->mActionReportNormal->setActionGroup(mSelectReportActions);
+    mUI->mActionReportAutosar->setActionGroup(mSelectReportActions);
+    mUI->mActionReportCertC->setActionGroup(mSelectReportActions);
+    mUI->mActionReportCertCpp->setActionGroup(mSelectReportActions);
+    mUI->mActionReportMisraC->setActionGroup(mSelectReportActions);
+    mUI->mActionReportMisraCpp2008->setActionGroup(mSelectReportActions);
+    mUI->mActionReportMisraCpp2023->setActionGroup(mSelectReportActions);
+
     mUI->mActionC89->setActionGroup(mCStandardActions);
     mUI->mActionC99->setActionGroup(mCStandardActions);
     mUI->mActionC11->setActionGroup(mCStandardActions);
@@ -312,6 +330,8 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     } else {
         delete mUI->mLayoutInformation;
     }
+
+    changeReportType();
 }
 
 MainWindow::~MainWindow()
@@ -361,6 +381,15 @@ void MainWindow::loadSettings()
         resize(mSettings->value(SETTINGS_WINDOW_WIDTH, 800).toInt(),
                mSettings->value(SETTINGS_WINDOW_HEIGHT, 600).toInt());
     }
+
+    const ReportType reportType = (ReportType)mSettings->value(SETTINGS_REPORT_TYPE, (int)ReportType::normal).toInt();
+    mUI->mActionReportNormal->setChecked(reportType <= ReportType::normal);
+    mUI->mActionReportAutosar->setChecked(reportType == ReportType::autosar);
+    mUI->mActionReportCertC->setChecked(reportType == ReportType::certC);
+    mUI->mActionReportCertCpp->setChecked(reportType == ReportType::certCpp);
+    mUI->mActionReportMisraC->setChecked(reportType == ReportType::misraC);
+    mUI->mActionReportMisraCpp2008->setChecked(reportType == ReportType::misraCpp2008);
+    mUI->mActionReportMisraCpp2023->setChecked(reportType == ReportType::misraCpp2023);
 
     const ShowTypes &types = mUI->mResults->getShowTypes();
     mUI->mActionShowStyle->setChecked(types.isShown(ShowTypes::ShowStyle));
@@ -443,6 +472,15 @@ void MainWindow::saveSettings() const
     mSettings->setValue(SETTINGS_WINDOW_WIDTH, size().width());
     mSettings->setValue(SETTINGS_WINDOW_HEIGHT, size().height());
     mSettings->setValue(SETTINGS_WINDOW_MAXIMIZED, isMaximized());
+
+    const ReportType reportType = mUI->mActionReportAutosar->isChecked() ? ReportType::autosar :
+                                  mUI->mActionReportCertC->isChecked() ? ReportType::certC :
+                                  mUI->mActionReportCertCpp->isChecked() ? ReportType::certCpp :
+                                  mUI->mActionReportMisraC->isChecked() ? ReportType::misraC :
+                                  mUI->mActionReportMisraCpp2008->isChecked() ? ReportType::misraCpp2008 :
+                                  mUI->mActionReportMisraCpp2023->isChecked() ? ReportType::misraCpp2023 :
+                                  ReportType::normal;
+    mSettings->setValue(SETTINGS_REPORT_TYPE, (int)reportType);
 
     // Show * states
     mSettings->setValue(SETTINGS_SHOW_STYLE, mUI->mActionShowStyle->isChecked());
@@ -662,7 +700,7 @@ void MainWindow::analyzeCode(const QString& code, const QString& filename)
     checkLockDownUI();
     clearResults();
     mUI->mResults->checkingStarted(1);
-    cppcheck.check(filename.toStdString(), code.toStdString());
+    cppcheck.check(FileWithDetails(filename.toStdString()), code.toStdString());
     analysisDone();
 
     // Expand results
@@ -843,17 +881,23 @@ Library::Error MainWindow::loadLibrary(Library &library, const QString &filename
     // Try to load the library from the project folder..
     if (mProjectFile) {
         QString path = QFileInfo(mProjectFile->getFilename()).canonicalPath();
-        ret = library.load(nullptr, (path+"/"+filename).toLatin1());
+        QString libpath = path+"/"+filename;
+        qDebug().noquote() << "looking for library '" + libpath + "'";
+        ret = library.load(nullptr, libpath.toLatin1());
         if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
             return ret;
     }
 
     // Try to load the library from the application folder..
     const QString appPath = QFileInfo(QCoreApplication::applicationFilePath()).canonicalPath();
-    ret = library.load(nullptr, (appPath+"/"+filename).toLatin1());
+    QString libpath = appPath+"/"+filename;
+    qDebug().noquote() << "looking for library '" + libpath + "'";
+    ret = library.load(nullptr, libpath.toLatin1());
     if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
         return ret;
-    ret = library.load(nullptr, (appPath+"/cfg/"+filename).toLatin1());
+    libpath = appPath+"/cfg/"+filename;
+    qDebug().noquote() << "looking for library '" + libpath + "'";
+    ret = library.load(nullptr, libpath.toLatin1());
     if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
         return ret;
 
@@ -861,10 +905,14 @@ Library::Error MainWindow::loadLibrary(Library &library, const QString &filename
     // Try to load the library from FILESDIR/cfg..
     const QString filesdir = FILESDIR;
     if (!filesdir.isEmpty()) {
-        ret = library.load(nullptr, (filesdir+"/cfg/"+filename).toLatin1());
+        libpath = filesdir+"/cfg/"+filename;
+        qDebug().noquote() << "looking for library '" + libpath + "'";
+        ret = library.load(nullptr, libpath.toLatin1());
         if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
             return ret;
-        ret = library.load(nullptr, (filesdir+filename).toLatin1());
+        libpath = filesdir+"/"+filename;
+        qDebug().noquote() << "looking for library '" + libpath + "'";
+        ret = library.load(nullptr, libpath.toLatin1());
         if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
             return ret;
     }
@@ -873,13 +921,19 @@ Library::Error MainWindow::loadLibrary(Library &library, const QString &filename
     // Try to load the library from the cfg subfolder..
     const QString datadir = getDataDir();
     if (!datadir.isEmpty()) {
-        ret = library.load(nullptr, (datadir+"/"+filename).toLatin1());
+        libpath = datadir+"/"+filename;
+        qDebug().noquote() << "looking for library '" + libpath + "'";
+        ret = library.load(nullptr, libpath.toLatin1());
         if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
             return ret;
-        ret = library.load(nullptr, (datadir+"/cfg/"+filename).toLatin1());
+        libpath = datadir+"/cfg/"+filename;
+        qDebug().noquote() << "looking for library '" + libpath + "'";
+        ret = library.load(nullptr, libpath.toLatin1());
         if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
             return ret;
     }
+
+    qDebug().noquote() << "library not found: '" + filename + "'";
 
     return ret;
 }
@@ -2180,5 +2234,58 @@ void MainWindow::hideInformation() {
 
 bool MainWindow::isCppcheckPremium() const {
     return mCppcheckCfgProductName.startsWith("Cppcheck Premium ");
+}
+
+void MainWindow::changeReportType() {
+    const ReportType reportType = mUI->mActionReportAutosar->isChecked() ? ReportType::autosar :
+                                  mUI->mActionReportCertC->isChecked() ? ReportType::certC :
+                                  mUI->mActionReportCertCpp->isChecked() ? ReportType::certCpp :
+                                  mUI->mActionReportMisraC->isChecked() ? ReportType::misraC :
+                                  mUI->mActionReportMisraCpp2008->isChecked() ? ReportType::misraCpp2008 :
+                                  mUI->mActionReportMisraCpp2023->isChecked() ? ReportType::misraCpp2023 :
+                                  ReportType::normal;
+
+    mUI->mResults->setReportType(reportType);
+
+    auto setTextAndHint = [](QAction* a, const QString& s) {
+        a->setVisible(!s.isEmpty());
+        a->setText(s);
+        a->setToolTip(s);
+    };
+
+    const QString showMandatory = tr("Show Mandatory");
+    const QString showRequired = tr("Show Required");
+    const QString showAdvisory = tr("Show Advisory");
+    const QString showDocument = tr("Show Document");
+
+    if (mUI->mActionReportAutosar->isChecked()) {
+        setTextAndHint(mUI->mActionShowErrors, "");
+        setTextAndHint(mUI->mActionShowWarnings, showRequired);
+        setTextAndHint(mUI->mActionShowStyle, showAdvisory);
+        setTextAndHint(mUI->mActionShowPortability, "");
+        setTextAndHint(mUI->mActionShowPerformance, "");
+        setTextAndHint(mUI->mActionShowInformation, "");
+    } else if (mUI->mActionReportMisraC->isChecked() || mUI->mActionReportMisraCpp2008->isChecked() || mUI->mActionReportMisraCpp2023->isChecked()) {
+        setTextAndHint(mUI->mActionShowErrors, mUI->mActionReportMisraCpp2008->isChecked() ? "" : showMandatory);
+        setTextAndHint(mUI->mActionShowWarnings, showRequired);
+        setTextAndHint(mUI->mActionShowStyle, showAdvisory);
+        setTextAndHint(mUI->mActionShowPortability, "");
+        setTextAndHint(mUI->mActionShowPerformance, "");
+        setTextAndHint(mUI->mActionShowInformation, mUI->mActionReportMisraCpp2008->isChecked() ? showDocument : QString());
+    } else if (mUI->mActionReportCertC->isChecked() || mUI->mActionReportCertCpp->isChecked()) {
+        setTextAndHint(mUI->mActionShowErrors, tr("Show L1"));
+        setTextAndHint(mUI->mActionShowWarnings, tr("Show L2"));
+        setTextAndHint(mUI->mActionShowStyle, tr("Show L3"));
+        setTextAndHint(mUI->mActionShowPortability, "");
+        setTextAndHint(mUI->mActionShowPerformance, "");
+        setTextAndHint(mUI->mActionShowInformation, "");
+    } else {
+        setTextAndHint(mUI->mActionShowErrors, tr("Show errors"));
+        setTextAndHint(mUI->mActionShowWarnings, tr("Show warnings"));
+        setTextAndHint(mUI->mActionShowStyle, tr("Show style"));
+        setTextAndHint(mUI->mActionShowPortability, tr("Show portability"));
+        setTextAndHint(mUI->mActionShowPerformance, tr("Show performance"));
+        setTextAndHint(mUI->mActionShowInformation, tr("Show information"));
+    }
 }
 

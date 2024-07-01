@@ -13,6 +13,7 @@
 #include <WinCon.h>
 #include <cstdio>
 #include <direct.h>
+#include <evntrace.h>
 #include <cstdlib>
 #include <ctime>
 #include <memory.h>
@@ -21,6 +22,37 @@
 #include <wchar.h>
 #include <atlstr.h>
 #include <string>
+
+bool UpdateTraceACalled(TRACEHANDLE traceHandle, LPCSTR loggerName, EVENT_TRACE_PROPERTIES* pProperties)
+{
+    // cppcheck-suppress UpdateTraceACalled
+    return UpdateTraceA(traceHandle, loggerName, pProperties) != ERROR_SUCCESS;
+}
+bool UpdateTraceWCalled(TRACEHANDLE traceHandle, LPCWSTR loggerName, EVENT_TRACE_PROPERTIES* pProperties)
+{
+    // cppcheck-suppress UpdateTraceWCalled
+    return UpdateTraceW(traceHandle, loggerName, pProperties) != ERROR_SUCCESS;
+}
+
+void invalidHandle_CreateFile(LPCWSTR lpFileName)
+{
+    HANDLE file = CreateFile(lpFileName, GENERIC_READ, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+    // INVALID_HANDLE_VALUE is not the same as 0
+    if (file != INVALID_HANDLE_VALUE && file) {}
+
+    // cppcheck-suppress resourceLeak
+}
+
+void invalid_socket()
+{
+    SOCKET sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+
+    // INVALID_SOCKET is not the same as 0
+    if (sock != INVALID_SOCKET && sock) {}
+
+    // cppcheck-suppress resourceLeak
+}
 
 void resourceLeak_OpenThread(const DWORD dwDesiredAccess, const BOOL bInheritHandle, const DWORD dwThreadId)
 {
@@ -1160,4 +1192,18 @@ void invalidPrintfArgType_StructMember(double d) { // #9672
 
 BOOL MyEnableWindow(HWND hWnd, BOOL bEnable) {
     return EnableWindow(hWnd, bEnable);
+}
+
+int SEH_filter(unsigned int code, struct _EXCEPTION_POINTERS* ep);
+int SEH_throwing_func();
+
+void SEH_knownConditionTrueFalse() { // #8434
+    int r = 0;
+    __try {
+        r = SEH_throwing_func();
+    }
+    __except (SEH_filter(GetExceptionCode(), GetExceptionInformation())) {
+        r = 1;
+    }
+    if (r == 0) {}
 }

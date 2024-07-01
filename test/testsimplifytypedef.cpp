@@ -218,6 +218,8 @@ private:
         TEST_CASE(simplifyTypedef151);
         TEST_CASE(simplifyTypedef152);
         TEST_CASE(simplifyTypedef153);
+        TEST_CASE(simplifyTypedef154);
+        TEST_CASE(simplifyTypedef155);
 
         TEST_CASE(simplifyTypedefFunction1);
         TEST_CASE(simplifyTypedefFunction2); // ticket #1685
@@ -3602,6 +3604,23 @@ private:
                             "Yp yp;\n"
                             "Ya ya;\n";
         exp = "long y ; long * yp ; long ya [ 3 ] ;";
+        ASSERT_EQUALS(exp, tok(code));
+    }
+
+    void simplifyTypedef154() {
+        const char code[] = "typedef int T;\n"
+                            "typedef T T;\n"
+                            "T t = 0;\n";
+        const char exp[] = "int t ; t = 0 ;";
+        ASSERT_EQUALS(exp, tok(code));
+    }
+
+    void simplifyTypedef155() {
+        const char code[] = "typedef struct S T;\n" // #12808
+                            "typedef struct S { int i; } T;\n"
+                            "extern \"C\" void f(T* t);\n";
+        const char exp[] = "struct S { int i ; } ; "
+                           "void f ( struct S * t ) ;";
         ASSERT_EQUALS(exp, tok(code));
     }
 

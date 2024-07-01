@@ -510,8 +510,23 @@ void CheckOther::checkRedundantAssignment()
                 else
                     start = tok->findExpressionStartEndTokens().second->next();
 
+                const Token * tokenToCheck = tok->astOperand1();
+
+                // Check if we are working with union
+                for (const Token* tempToken = tokenToCheck; Token::simpleMatch(tempToken, ".");) {
+                    tempToken = tempToken->astOperand1();
+                    if (tempToken && tempToken->variable() && tempToken->variable()->type() && tempToken->variable()->type()->isUnionType())
+                        tokenToCheck = tempToken;
+                }
+
+                if (start->hasKnownSymbolicValue(tokenToCheck) && Token::simpleMatch(start->astParent(), "=") && !diag(tok)) {
+                    const ValueFlow::Value* val = start->getKnownValue(ValueFlow::Value::ValueType::SYMBOLIC);
+                    if (val->intvalue == 0) // no offset
+                        redundantAssignmentSameValueError(tokenToCheck, val, tok->astOperand1()->expressionString());
+                }
+
                 // Get next assignment..
-                const Token *nextAssign = fwdAnalysis.reassign(tok->astOperand1(), start, scope->bodyEnd);
+                const Token *nextAssign = fwdAnalysis.reassign(tokenToCheck, start, scope->bodyEnd);
 
                 if (!nextAssign)
                     continue;
@@ -532,8 +547,10 @@ void CheckOther::checkRedundantAssignment()
                     redundantAssignmentInSwitchError(tok, nextAssign, tok->astOperand1()->expressionString());
                 else if (isInitialization)
                     redundantInitializationError(tok, nextAssign, tok->astOperand1()->expressionString(), inconclusive);
-                else
+                else {
+                    diag(nextAssign);
                     redundantAssignmentError(tok, nextAssign, tok->astOperand1()->expressionString(), inconclusive);
+                }
             }
         }
     }
@@ -576,6 +593,15 @@ void CheckOther::redundantAssignmentInSwitchError(const Token *tok1, const Token
     reportError(errorPath, Severity::style, "redundantAssignInSwitch",
                 "$symbol:" + var + "\n"
                 "Variable '$symbol' is reassigned a value before the old one has been used. 'break;' missing?", CWE563, Certainty::normal);
+}
+
+void CheckOther::redundantAssignmentSameValueError(const Token *tok, const ValueFlow::Value* val, const std::string &var)
+{
+    auto errorPath = val->errorPath;
+    errorPath.emplace_back(tok, "");
+    reportError(errorPath, Severity::style, "redundantAssignment",
+                "$symbol:" + var + "\n"
+                "Variable '$symbol' is assigned an expression that holds the same value.", CWE563, Certainty::normal);
 }
 
 
@@ -1140,6 +1166,9 @@ bool CheckOther::checkInnerScope(const Token *tok, const Variable* var, bool& us
                     }
                 }
             }
+            const auto yield = astContainerYield(tok);
+            if (yield == Library::Container::Yield::BUFFER || yield == Library::Container::Yield::BUFFER_NT)
+                return false;
         }
     }
 
@@ -1532,7 +1561,7 @@ void CheckOther::checkConstPointer()
             continue;
         pointers.emplace(var);
         const Token* parent = tok->astParent();
-        enum Deref { NONE, DEREF, MEMBER } deref = NONE;
+        enum Deref : std::uint8_t { NONE, DEREF, MEMBER } deref = NONE;
         bool hasIncDec = false;
         if (parent && (parent->isUnaryOp("*") || (hasIncDec = parent->isIncDecOp() && parent->astParent() && parent->astParent()->isUnaryOp("*"))))
             deref = DEREF;
@@ -1629,6 +1658,9 @@ void CheckOther::checkConstPointer()
             if (p->isMaybeUnused())
                 continue;
         }
+        if (const Function* func = Scope::nestedInFunction(p->scope()))
+            if (func->templateDef)
+                continue;
         if (std::find(nonConstPointers.cbegin(), nonConstPointers.cend(), p) == nonConstPointers.cend()) {
             // const Token *start = getVariableChangedStart(p);
             // const int indirect = p->isArray() ? p->dimensions().size() : 1;
@@ -2470,7 +2502,8 @@ void CheckOther::checkDuplicateExpression()
                         tok->astOperand2()->expressionString() == nextAssign->astOperand2()->expressionString()) {
                         bool differentDomain = false;
                         const Scope * varScope = var1->scope() ? var1->scope() : scope;
-                        for (const Token *assignTok = Token::findsimplematch(var2, ";"); assignTok && assignTok != varScope->bodyEnd; assignTok = assignTok->next()) {
+                        const Token* assignTok = Token::findsimplematch(var2, ";");
+                        for (; assignTok && assignTok != varScope->bodyEnd; assignTok = assignTok->next()) {
                             if (!Token::Match(assignTok, "%assign%|%comp%"))
                                 continue;
                             if (!assignTok->astOperand1())
@@ -2501,8 +2534,10 @@ void CheckOther::checkDuplicateExpression()
                         }
                         if (!differentDomain && !isUniqueExpression(tok->astOperand2()))
                             duplicateAssignExpressionError(var1, var2, false);
-                        else if (mSettings->certainty.isEnabled(Certainty::inconclusive))
+                        else if (mSettings->certainty.isEnabled(Certainty::inconclusive)) {
+                            diag(assignTok);
                             duplicateAssignExpressionError(var1, var2, true);
+                        }
                     }
                 }
             }
@@ -2577,7 +2612,7 @@ void CheckOther::checkDuplicateExpression()
                                          followVar,
                                          &errorPath) &&
                         isWithoutSideEffects(tok->astOperand2()))
-                        duplicateExpressionError(tok->astOperand2(), tok->astOperand1()->astOperand2(), tok, errorPath);
+                        duplicateExpressionError(tok->astOperand2(), tok->astOperand1()->astOperand2(), tok, std::move(errorPath));
                     else if (tok->astOperand2() && isConstExpression(tok->astOperand1(), mSettings->library)) {
                         auto checkDuplicate = [&](const Token* exp1, const Token* exp2, const Token* ast1) {
                             if (isSameExpression(true, exp1, exp2, *mSettings, true, true, &errorPath) &&
@@ -2903,7 +2938,7 @@ void CheckOther::checkRedundantCopy()
         if (Token::simpleMatch(dot, ".")) {
             const Token* varTok = dot->astOperand1();
             const int indirect = varTok->valueType() ? varTok->valueType()->pointer : 0;
-            if (isVariableChanged(tok, tok->scope()->bodyEnd, varTok->varId(), indirect, /*globalvar*/ false, *mSettings))
+            if (isVariableChanged(tok, tok->scope()->bodyEnd, indirect, varTok->varId(), /*globalvar*/ true, *mSettings))
                 continue;
             if (isTemporary(dot, &mSettings->library, /*unknown*/ true))
                 continue;
@@ -3666,7 +3701,7 @@ void CheckOther::checkShadowVariables()
                 continue;
 
             if (functionScope && functionScope->type == Scope::ScopeType::eFunction && functionScope->function) {
-                const auto argList = functionScope->function->argumentList;
+                const auto & argList = functionScope->function->argumentList;
                 auto it = std::find_if(argList.cbegin(), argList.cend(), [&](const Variable& arg) {
                     return arg.nameToken() && var.name() == arg.name();
                 });

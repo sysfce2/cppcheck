@@ -441,10 +441,17 @@ namespace ValueFlow
                 setTokenValue(parent, v, settings);
         }
 
+        // Offset of non null pointer is not null also
+        else if (astIsPointer(tok) && Token::Match(parent, "+|-") &&
+                 (parent->astOperand2() == nullptr || !astIsPointer(parent->astOperand2())) &&
+                 value.isIntValue() && value.isImpossible() && value.intvalue == 0) {
+            setTokenValue(parent, std::move(value), settings);
+        }
+
         // Calculations..
-        else if ((parent->isArithmeticalOp() || parent->isComparisonOp() || (parent->tokType() == Token::eBitOp) || (parent->tokType() == Token::eLogicalOp)) &&
-                 parent->astOperand1() &&
-                 parent->astOperand2()) {
+        else if ((parent->isArithmeticalOp() || parent->isComparisonOp() || (parent->tokType() == Token::eBitOp) ||
+                  (parent->tokType() == Token::eLogicalOp)) &&
+                 parent->astOperand1() && parent->astOperand2()) {
 
             const bool noninvertible = isNonInvertibleOperation(parent);
 
@@ -633,8 +640,22 @@ namespace ValueFlow
                     continue;
                 Value v(val);
                 if (parent == tok->previous()) {
-                    if (v.isIntValue() || v.isSymbolicValue())
-                        v.intvalue = v.intvalue + 1;
+                    if (v.isIntValue() || v.isSymbolicValue()) {
+                        const ValueType *dst = tok->valueType();
+                        if (dst) {
+                            const size_t sz = ValueFlow::getSizeOf(*dst, settings);
+                            long long newvalue = ValueFlow::truncateIntValue(v.intvalue + 1, sz, dst->sign);
+                            if (v.bound != ValueFlow::Value::Bound::Point) {
+                                if (newvalue < v.intvalue) {
+                                    v.invertBound();
+                                    newvalue -= 2;
+                                }
+                            }
+                            v.intvalue = newvalue;
+                        } else {
+                            v.intvalue = v.intvalue + 1;
+                        }
+                    }
                     else
                         v.floatValue = v.floatValue + 1.0;
                 }
@@ -649,8 +670,22 @@ namespace ValueFlow
                     continue;
                 Value v(val);
                 if (parent == tok->previous()) {
-                    if (v.isIntValue() || v.isSymbolicValue())
-                        v.intvalue = v.intvalue - 1;
+                    if (v.isIntValue() || v.isSymbolicValue()) {
+                        const ValueType *dst = tok->valueType();
+                        if (dst) {
+                            const size_t sz = ValueFlow::getSizeOf(*dst, settings);
+                            long long newvalue = ValueFlow::truncateIntValue(v.intvalue - 1, sz, dst->sign);
+                            if (v.bound != ValueFlow::Value::Bound::Point) {
+                                if (newvalue > v.intvalue) {
+                                    v.invertBound();
+                                    newvalue += 2;
+                                }
+                            }
+                            v.intvalue = newvalue;
+                        } else {
+                            v.intvalue = v.intvalue - 1;
+                        }
+                    }
                     else
                         v.floatValue = v.floatValue - 1.0;
                 }
@@ -659,7 +694,8 @@ namespace ValueFlow
         }
 
         // C++ init
-        else if (parent->str() == "{" && Token::simpleMatch(parent->previous(), "= {") && Token::simpleMatch(parent->link(), "} ;")) {
+        else if (parent->str() == "{" && Token::simpleMatch(parent->previous(), "= {") &&
+                 Token::simpleMatch(parent->link(), "} ;")) {
             const Token* lhs = parent->previous()->astOperand1();
             if (lhs && lhs->valueType()) {
                 if (lhs->valueType()->isIntegral() || lhs->valueType()->isFloat() || (lhs->valueType()->pointer > 0 && value.isIntValue())) {

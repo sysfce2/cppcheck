@@ -58,6 +58,7 @@ private:
         TEST_CASE(zeroDiv17); // #9931
         TEST_CASE(zeroDiv18);
         TEST_CASE(zeroDiv19);
+        TEST_CASE(zeroDiv20); // #11175
 
         TEST_CASE(zeroDivCond); // division by zero / useless condition
 
@@ -214,6 +215,7 @@ private:
         TEST_CASE(redundantVarAssignment_switch_break);
         TEST_CASE(redundantInitialization);
         TEST_CASE(redundantMemWrite);
+        TEST_CASE(redundantAssignmentSameValue);
 
         TEST_CASE(varFuncNullUB);
 
@@ -659,6 +661,16 @@ private:
               "        int j = 10 / i;\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:3]: (error) Division by zero.\n", errout_str());
+    }
+
+    void zeroDiv20()
+    {
+        check("uint16_t f(void)\n" // #11175
+              "{\n"
+              "    uint16_t x = 0xFFFFU;\n" // UINT16_MAX=0xFFFF
+              "    return 42/(++x);\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Division by zero.\n", errout_str());
     }
 
     void zeroDivCond() {
@@ -3647,6 +3659,14 @@ private:
               "    switch (signal.signum) {}\n"
               "}");
         ASSERT_EQUALS("[test.cpp:10] -> [test.cpp:13]: (style) Parameter 'signal' can be declared as reference to const. However it seems that 'signalEvent' is a callback function, if 'signal' is declared with const you might also need to cast function pointer(s).\n", errout_str());
+
+        check("void f(int* p) {}\n" // 12843
+              "void g(std::map<void(*)(int*), int>&m) {\n"
+              "    m[&f] = 0;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:1]: (style) Parameter 'p' can be declared as pointer to const. "
+                      "However it seems that 'f' is a callback function, if 'p' is declared with const you might also need to cast function pointer(s).\n",
+                      errout_str());
     }
 
     void constPointer() {
@@ -4471,6 +4491,96 @@ private:
               "  case 1: x = 6; goto a;\n"
               "  }\n"
               "}");
+        ASSERT_EQUALS("", errout_str());
+
+        // Ticket #5115 "redundantAssignment when using a union"
+        check("void main(void)\n"
+              "{\n"
+              "    short lTotal = 0;\n"
+              "    union\n"
+              "    {\n"
+              "        short l1;\n"
+              "        struct\n"
+              "        {\n"
+              "            unsigned char b1;\n"
+              "            unsigned char b2;\n"
+              "        } b;\n"
+              "    } u;\n"
+              "    u.l1 = 1;\n"
+              "    lTotal += u.b.b1;\n"
+              "    u.l1 = 2;\n" //Should not show RedundantAssignment
+              "}", true, false, false);
+        ASSERT_EQUALS("", errout_str());
+
+        // Ticket #5115 "redundantAssignment when using a union"
+        check("void main(void)\n"
+              "{\n"
+              "    short lTotal = 0;\n"
+              "    union\n"
+              "    {\n"
+              "        short l1;\n"
+              "        struct\n"
+              "        {\n"
+              "            unsigned char b1;\n"
+              "            unsigned char b2;\n"
+              "        } b;\n"
+              "    } u;\n"
+              "    u.l1 = 1;\n"
+              "    u.l1 = 2;\n"
+              "}", true, false, false);
+        ASSERT_EQUALS("[test.cpp:13] -> [test.cpp:14]: (style) Variable 'u.l1' is reassigned a value before the old one has been used.\n", errout_str());
+
+        // Ticket #10093 "redundantAssignment when using a union"
+        check("typedef union fixed32_union {\n"
+              "    struct {\n"
+              "        unsigned32 abcd;\n"
+              "    } u32;\n"
+              "    struct {\n"
+              "        unsigned16 ab;\n"
+              "        unsigned16 cd;\n"
+              "    } u16;"
+              "    struct {\n"
+              "        unsigned8 a;\n"
+              "        unsigned8 b;\n"
+              "        unsigned8 c;\n"
+              "        unsigned8 d;\n"
+              "        } b;\n"
+              "} fixed32;\n"
+              "void func1(void) {\n"
+              "    fixed32 m;\n"
+              "    m.u16.ab = 47;\n"
+              "    m.u16.cd = 0;\n"
+              "    m.u16.ab = m.u32.abcd / 53;\n"
+              "}", true, false, false);
+        ASSERT_EQUALS("", errout_str());
+
+        // Ticket #10093 "redundantAssignment when using a union"
+        check("typedef union{\n"
+              "    char as_char[4];\n"
+              "    int as_int;\n"
+              "} union_t;\n"
+              "void fn(char *data, int len) {\n"
+              "    int i;\n"
+              "    for (i = 0; i < len; i++)\n"
+              "        data[i] = 'a';\n"
+              "}\n"
+              "int main(int argc, char *argv[]) {\n"
+              "    union_t u;\n"
+              "    u.as_int = 42;\n"
+              "    fn(&u.as_char[0], 4);\n"
+              "    u.as_int = 0;\n"
+              "}", true, false, false);
+        ASSERT_EQUALS("", errout_str());
+
+        // Ticket #5115 "redundantAssignment when using a union"
+        check("void foo(char *ptr) {\n"
+              "    union {\n"
+              "        char * s8;\n"
+              "        unsigned long long u64;\n"
+              "    } addr;\n"
+              "    addr.s8 = ptr;\n"
+              "    addr.u64 += 8;\n"
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -10078,6 +10188,43 @@ private:
               "    strcpy(buf, x);\n"
               "}");
         TODO_ASSERT_EQUALS("error", "", errout_str());
+    }
+
+    void redundantAssignmentSameValue() {
+        check("int main() {\n" // #11642
+              "    int a = 0;\n"
+              "    int b = a;\n"
+              "    int c = 1;\n"
+              "    a = b;\n"
+              "    return a * b * c;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:5]: (style) Variable 'a' is assigned an expression that holds the same value.\n", errout_str());
+
+        check("int main() {\n"
+              "    int a = 0;\n"
+              "    int b = a;\n"
+              "    int c = 1;\n"
+              "    a = b + 1;\n"
+              "    return a * b * c;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int main() {\n"
+              "    int a = 0;\n"
+              "    int b = a;\n"
+              "    int c = 1;\n"
+              "    a = b = 5;\n"
+              "    return a * b * c;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:5]: (style) Redundant initialization for 'b'. The initialized value is overwritten before it is read.\n", errout_str());
+
+        check("int f(int i) {\n" // #12874
+              "    int j = i + 1;\n"
+              "    if (i > 5)\n"
+              "        j = i;\n"
+              "    return j;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void varFuncNullUB() { // #4482

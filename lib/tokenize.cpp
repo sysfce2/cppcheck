@@ -860,6 +860,10 @@ namespace {
                     Token::createMutualLinks(tok3->next(), after->previous());
                 }
             }
+            if (!after) {
+                mReplaceFailed = true;
+                return;
+            }
 
             bool useAfterVarRange = true;
             if (Token::simpleMatch(mRangeAfterVar.first, "[")) {
@@ -905,6 +909,9 @@ namespace {
                 throw InternalError(tok, "Failed to simplify typedef. Is the code valid?");
 
             Token* const tok4 = useAfterVarRange ? insertTokens(after->previous(), mRangeAfterVar)->next() : tok3->next();
+
+            if (tok->next() == tok4)
+                throw InternalError(tok, "Failed to simplify typedef. Is the code valid?");
 
             tok->deleteThis();
 
@@ -1124,7 +1131,9 @@ void Tokenizer::simplifyTypedef()
     {
         // remove typedefs
         for (auto &t: typedefs) {
-            if (!t.second.replaceFailed()) {
+            if (t.second.replaceFailed()) {
+                syntaxError(t.second.getTypedefToken());
+            } else {
                 const Token* const typedefToken = t.second.getTypedefToken();
                 TypedefInfo typedefInfo;
                 typedefInfo.name = t.second.name();
@@ -1794,7 +1803,7 @@ void Tokenizer::simplifyTypedefCpp()
                 }
 
                 // check for typedef that can be substituted
-                else if ((tok2->isNameOnly() || (tok2->isName() && (tok2->isExpandedMacro() || tok2->isInline()))) &&
+                else if ((tok2->isNameOnly() || (tok2->isName() && (tok2->isExpandedMacro() || tok2->isInline() || tok2->isExternC()))) &&
                          (Token::simpleMatch(tok2, pattern.c_str(), pattern.size()) ||
                           (inMemberFunc && tok2->str() == typeName->str()))) {
                     // member function class variables don't need qualification
@@ -2409,7 +2418,7 @@ void Tokenizer::simplifyTypedefCpp()
 
 namespace {
     struct ScopeInfo3 {
-        enum Type { Global, Namespace, Record, MemberFunction, Other };
+        enum Type : std::uint8_t { Global, Namespace, Record, MemberFunction, Other };
         ScopeInfo3() : parent(nullptr), type(Global), bodyStart(nullptr), bodyEnd(nullptr) {}
         ScopeInfo3(ScopeInfo3 *parent_, Type type_, std::string name_, const Token *bodyStart_, const Token *bodyEnd_)
             : parent(parent_), type(type_), name(std::move(name_)), bodyStart(bodyStart_), bodyEnd(bodyEnd_) {
@@ -4838,7 +4847,7 @@ void Tokenizer::setVarIdPass1()
             }
 
             // function declaration inside executable scope? Function declaration is of form: type name "(" args ")"
-            if (scopeStack.top().isExecutable && Token::Match(tok, "%name% [,)[]")) {
+            if (scopeStack.top().isExecutable && !scopeStack.top().isStructInit && Token::Match(tok, "%name% [,)[]")) {
                 bool par = false;
                 const Token* start;
                 Token* end;
@@ -5107,6 +5116,8 @@ void Tokenizer::setVarIdPass2()
                 classnameTokens.push_back(tokStart->next());
                 tokStart = tokStart->tokAt(2);
             }
+            if (!tokStart)
+                syntaxError(tok);
         }
 
         std::string classname;
@@ -5957,7 +5968,19 @@ void Tokenizer::dump(std::ostream &out) const
         // could result in invalid XML, so run it through toxml().
         outs += "str=\"";
         outs += ErrorLogger::toxml(dir.str);
-        outs +="\"/>";
+        outs +="\">";
+        outs += '\n';
+        for (const auto & strToken : dir.strTokens) {
+            outs += "      <token ";
+            outs += "column=\"";
+            outs += std::to_string(strToken.column);
+            outs += "\" ";
+            outs += "str=\"";
+            outs += ErrorLogger::toxml(strToken.tokStr);
+            outs +="\"/>";
+            outs += '\n';
+        }
+        outs += "    </directive>";
         outs += '\n';
     }
     outs += "  </directivelist>";
@@ -8675,9 +8698,15 @@ void Tokenizer::findGarbageCode() const
         }
         if (Token::Match(tok, "%num%|%bool%|%char%|%str% %num%|%bool%|%char%|%str%") && !Token::Match(tok, "%str% %str%"))
             syntaxError(tok);
+        if (Token::Match(tok, "%num%|%bool%|%char%|%str% {") &&
+            !(tok->tokType() == Token::Type::eString && Token::simpleMatch(tok->tokAt(-1), "extern")) &&
+            !(tok->tokType() == Token::Type::eBoolean && cpp && Token::simpleMatch(tok->tokAt(-1), "requires")))
+            syntaxError(tok);
         if (Token::Match(tok, "%assign% typename|class %assign%"))
             syntaxError(tok);
         if (Token::Match(tok, "%assign% [;)}]") && (!cpp || !Token::simpleMatch(tok->previous(), "operator")))
+            syntaxError(tok);
+        if (Token::Match(tok, "; %assign%"))
             syntaxError(tok);
         if (Token::Match(tok, "%cop%|=|,|[ %or%|%oror%|/|%"))
             syntaxError(tok);
@@ -8706,6 +8735,8 @@ void Tokenizer::findGarbageCode() const
             if (!Token::Match(tok->next(), "%name%|*|~"))
                 syntaxError(tok, tok->strAt(-1) + " " + tok->str() + " " + tok->strAt(1));
         }
+        if (Token::Match(tok, "[{,] . %name%") && !Token::Match(tok->tokAt(3), "[.=[{]"))
+            syntaxError(tok->next());
         if (Token::Match(tok, "[!|+-/%^~] )|]"))
             syntaxError(tok);
         if (Token::Match(tok, "==|!=|<=|>= %comp%") && tok->strAt(-1) != "operator")
@@ -8760,6 +8791,8 @@ void Tokenizer::findGarbageCode() const
                 if (!tok2->next() || tok2->isControlFlowKeyword() || Token::Match(tok2, "typedef|static|."))
                     syntaxError(tok);
                 if (Token::Match(tok2, "%name% %name%") && tok2->str() == tok2->strAt(1)) {
+                    if (Token::simpleMatch(tok2->tokAt(2), ";"))
+                        continue;
                     if (tok2->isStandardType() && tok2->str() == "long")
                         continue;
                     if (Token::Match(tok2->tokAt(-1), "enum|struct|union") || (isCPP() && Token::Match(tok2->tokAt(-1), "class|::")))

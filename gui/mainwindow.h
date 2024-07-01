@@ -22,6 +22,8 @@
 #include "library.h"
 #include "platforms.h"
 
+#include <cstdint>
+
 #include <QFileDialog>
 #include <QMainWindow>
 #include <QObject>
@@ -62,7 +64,7 @@ public:
     /**
      * @brief Maximum number of MRU project items in File-menu.
      */
-    enum { MaxRecentProjects = 5 };
+    enum : std::uint8_t { MaxRecentProjects = 5 };
 
     MainWindow(TranslationHandler* th, QSettings* settings);
     MainWindow(const MainWindow &) = delete;
@@ -239,6 +241,8 @@ private slots:
     void replyFinished(QNetworkReply *reply);
 
     void hideInformation();
+
+    void changeReportType();
 private:
 
     bool isCppcheckPremium() const;
@@ -459,6 +463,9 @@ private:
 
     /** @brief GUI actions for selecting language. */
     QActionGroup *mSelectLanguageActions;
+
+    /** @brief GUI actions for selecting report. */
+    QActionGroup *mSelectReportActions;
 
     /**
      * @brief Are we exiting the cppcheck?

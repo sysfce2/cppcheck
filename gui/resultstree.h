@@ -20,7 +20,10 @@
 #ifndef RESULTSTREE_H
 #define RESULTSTREE_H
 
+#include "common.h"
 #include "showtypes.h"
+
+#include <cstdint>
 
 #include <QObject>
 #include <QStandardItemModel>
@@ -39,7 +42,7 @@ class ThreadHandler;
 class QContextMenuEvent;
 class QKeyEvent;
 class QSettings;
-enum class Severity;
+enum class Severity : std::uint8_t;
 
 /// @addtogroup GUI
 /// @{
@@ -183,6 +186,8 @@ public:
     ShowTypes mShowSeverities;
 
     void keyPressEvent(QKeyEvent *event) override;
+
+    void setReportType(ReportType reportType);
 
 signals:
     /**
@@ -516,6 +521,17 @@ private:
     /** @brief Convert GUI error item into data error item */
     void readErrorItem(const QStandardItem *error, ErrorItem *item) const;
 
+    bool isCertReport() const {
+        return mReportType == ReportType::certC || mReportType == ReportType::certCpp;
+    }
+
+    bool isAutosarMisraReport() const {
+        return mReportType == ReportType::autosar ||
+               mReportType == ReportType::misraC ||
+               mReportType == ReportType::misraCpp2008 ||
+               mReportType == ReportType::misraCpp2023;
+    }
+
     QStringList mHiddenMessageId;
 
     QItemSelectionModel* mSelectionModel{};
@@ -523,6 +539,10 @@ private:
 
     bool mShowCppcheck = true;
     bool mShowClang = true;
+
+    ReportType mReportType = ReportType::normal;
+
+    QMap<QString,QString> mGuideline;
 };
 /// @}
 #endif // RESULTSTREE_H

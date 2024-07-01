@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.11
@@ -47,15 +47,15 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        python-version: [3.6, 3.7, 3.8, 3.9, '3.10', '3.11', '3.12']
+        python-version: [3.6, 3.7, 3.8, 3.9, '3.10', '3.11', '3.12.3']
         include:
-          - python-version: '3.12'
+          - python-version: '3.12.3'
             python-latest: true
 
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Restore Cppcheck
         uses: actions/cache@v4
@@ -89,6 +89,7 @@ jobs:
           python -m pip install pygments
           python -m pip install requests
           python -m pip install psutil
+          python -m pip install setuptools
 
       - name: run Shellcheck
         if: matrix.python-latest
@@ -98,10 +99,8 @@ jobs:
       - name: run pylint
         if: matrix.python-latest
         run: |
-          echo "FIXME pylint is disabled for now because it fails to import files:"
-          echo "FIXME addons/runaddon.py:1:0: E0401: Unable to import 'cppcheckdata' (import-error)"
-          echo "FIXME addons/runaddon.py:1:0: E0401: Unable to import 'cppcheck' (import-error)"
-          # pylint --rcfile=pylintrc_travis --jobs $(nproc) addons/*.py htmlreport/cppcheck-htmlreport htmlreport/*.py tools/*.py
+          shopt -s globstar
+          pylint --jobs $(nproc) addons/**/*.py htmlreport/cppcheck-htmlreport htmlreport/**/*.py test/**/*.py tools/**/*.py
 
       - name: check .json files
         if: matrix.python-latest
@@ -115,10 +114,12 @@ jobs:
 
       - name: check python syntax
         run: |
-          python -m py_compile addons/*.py
+          shopt -s globstar
+          python -m py_compile addons/**/*.py
           python -m py_compile htmlreport/cppcheck-htmlreport
-          python -m py_compile htmlreport/*.py
-          python -m py_compile tools/*.py
+          python -m py_compile htmlreport/**/*.py
+          python -m py_compile test/**/*.py
+          python -m py_compile tools/**/*.py
 
       - name: compile addons
         run: |
@@ -189,7 +190,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: run dmake
         run: |

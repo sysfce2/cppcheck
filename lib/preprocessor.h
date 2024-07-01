@@ -24,6 +24,7 @@
 #include "config.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <istream>
 #include <list>
 #include <map>
@@ -42,7 +43,7 @@ class SuppressionList;
  * Each preprocessor directive (\#include, \#define, \#undef, \#if, \#ifdef, \#else, \#endif)
  * will be recorded as an instance of this class.
  *
- * file and linenr denote the location where where the directive is defined.
+ * file and linenr denote the location where the directive is defined.
  *
  */
 
@@ -56,8 +57,18 @@ struct CPPCHECKLIB Directive {
     /** the actual directive text */
     std::string str;
 
+    struct DirectiveToken {
+        explicit DirectiveToken(const simplecpp::Token & _tok);
+        int line;
+        int column;
+        std::string tokStr;
+    };
+
+    std::vector<DirectiveToken> strTokens;
+
     /** record a directive (possibly filtering src) */
-    Directive(std::string _file, const int _linenr, const std::string &_str);
+    Directive(const simplecpp::Location & _loc, std::string _str);
+    Directive(std::string _file, const int _linenr, std::string _str);
 };
 
 class CPPCHECKLIB RemarkComment {
@@ -97,7 +108,7 @@ public:
     /**
      * Include file types.
      */
-    enum HeaderTypes {
+    enum HeaderTypes : std::uint8_t {
         UserHeader = 1,
         SystemHeader
     };

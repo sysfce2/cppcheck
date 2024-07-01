@@ -830,7 +830,7 @@ static void compileTerm(Token *&tok, AST_state& state)
         } else if ((state.cpp && iscpp11init(tok)) || Token::simpleMatch(tok->previous(), "] {")) {
             Token *const end = tok->link();
             if (state.op.empty() || Token::Match(tok->previous(), "[{,]") || Token::Match(tok->tokAt(-2), "%name% (")) {
-                if (Token::Match(tok, "{ . %name% =|{")) {
+                if (Token::Match(tok->tokAt(-1), "!!, { . %name% =|{")) {
                     const int inArrayAssignment = state.inArrayAssignment;
                     state.inArrayAssignment = 1;
                     compileBinOp(tok, state, compileExpression);
@@ -960,7 +960,10 @@ static void compilePrecedence2(Token *&tok, AST_state& state)
                 tok = tok->tokAt(3);
                 break;
             }
-            compileBinOp(tok, state, compileScope);
+            if (!Token::Match(tok->tokAt(-1), "[{,]"))
+                compileBinOp(tok, state, compileScope);
+            else
+                compileUnaryOp(tok, state, compileScope);
         } else if (tok->str() == "[") {
             if (state.cpp && isPrefixUnary(tok, /*cpp*/ true) && Token::Match(tok->link(), "] (|{|<")) { // Lambda
                 // What we do here:
@@ -1936,7 +1939,7 @@ void TokenList::simplifyPlatformTypes()
 
     const bool isCPP11 = isCPP() && (mSettings->standards.cpp >= Standards::CPP11);
 
-    enum { isLongLong, isLong, isInt } type;
+    enum : std::uint8_t { isLongLong, isLong, isInt } type;
 
     /** @todo This assumes a flat address space. Not true for segmented address space (FAR *). */
 

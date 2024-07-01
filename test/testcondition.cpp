@@ -123,6 +123,7 @@ private:
         TEST_CASE(knownConditionCast); // #9976
         TEST_CASE(knownConditionIncrementLoop); // #9808
         TEST_CASE(knownConditionAfterBailout); // #12526
+        TEST_CASE(knownConditionIncDecOperator);
     }
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
@@ -4600,6 +4601,75 @@ private:
               "    if ((i = g(), 1) != 0) {}\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:3]: (style) Condition '(i=g(),1)!=0' is always true\n", errout_str());
+
+        check("void f(unsigned i) {\n"
+              "    const int a[2] = {};\n"
+              "    const int* q = a + i;\n"
+              "    if (q) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (style) Condition 'q' is always true\n", errout_str());
+
+        check("void f(int i) {\n"
+              "    int j = 0;\n"
+              "    switch (i) {\n"
+              "    case 1:\n"
+              "        j = 0;\n"
+              "        break;\n"
+              "    default:\n"
+              "        j = 1;\n"
+              "    }\n"
+              "    if (j != 0) {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("void f() {\n"
+              "    const char *s1 = foo();\n"
+              "    const char *s2 = bar();\n"
+              "    if (s2 == NULL)\n"
+              "        return;\n"
+              "    size_t len = s2 - s1;\n"
+              "    if (len == 0)\n"
+              "        return;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int h();\n" // #12858
+              "bool g() {\n"
+              "    bool b{};\n"
+              "    try {\n"
+              "        int x = h();\n"
+              "        switch (x) {\n"
+              "        default:\n"
+              "            b = true;\n"
+              "        }\n"
+              "    }\n"
+              "    catch (...) {\n"
+              "        b = false;\n"
+              "    }\n"
+              "    return b;\n"
+              "}\n"
+              "void f() {\n"
+              "    if (g()) {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int f(int x, int y) {\n" // #11822
+              "    if (x) {\n"
+              "        switch (y) {\n"
+              "        case 1:\n"
+              "            return 7;\n"
+              "        }\n"
+              "    }\n"
+              " \n"
+              "    if (y)\n"
+              "        return 8;\n"
+              " \n"
+              "    if (x)\n"
+              "        return 9;\n"
+              " \n"
+              "    return 0;\n"
+              "}");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void alwaysTrueSymbolic()
@@ -6045,6 +6115,20 @@ private:
             "};"
             );
         ASSERT_EQUALS("[test.cpp:13] -> [test.cpp:18]: (style) Condition 'mS.b' is always false\n", errout_str());
+    }
+
+    void knownConditionIncDecOperator() {
+        check(
+            "void f() {\n"
+            "    unsigned int d = 0;\n"
+            "    for (int i = 0; i < 4; ++i) {\n"
+            "        if (i < 3)\n"
+            "            ++d;\n"
+            "        else if (--d == 0)\n"
+            "            ;\n"
+            "    }\n"
+            "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 };
 

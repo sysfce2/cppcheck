@@ -6,7 +6,22 @@ import sys
 import pytest
 import json
 
-from testutils import cppcheck, assert_cppcheck
+from testutils import cppcheck, assert_cppcheck, cppcheck_ex
+
+
+def __remove_std_lookup_log(l : list, exepath):
+    l.remove("looking for library 'std.cfg'")
+    l.remove("looking for library '{}/std.cfg'".format(exepath))
+    l.remove("looking for library '{}/cfg/std.cfg'".format(exepath))
+    return l
+
+
+def __remove_verbose_log(l : list):
+    l.remove('Defines:')
+    l.remove('Undefines:')
+    l.remove('Includes:')
+    l.remove('Platform:native')
+    return l
 
 
 def test_missing_include(tmpdir):  # #11283
@@ -452,13 +467,9 @@ namespace _invalid_namespace { }
 
     exitcode, stdout, stderr = cppcheck(args)
     assert exitcode == 0
-    lines = stdout.splitlines()
+    lines = __remove_verbose_log(stdout.splitlines())
     assert lines == [
-        'Checking {} ...'.format(test_file),
-        'Defines:',
-        'Undefines:',
-        'Includes:',
-        'Platform:native'
+        'Checking {} ...'.format(test_file)
     ]
     lines = [line for line in stderr.splitlines() if line != '']
     expect = [
@@ -585,13 +596,9 @@ def test_addon_namingng_config(tmpdir):
     exitcode, stdout, stderr = cppcheck(args)
     assert exitcode == 0
 
-    lines = stdout.splitlines()
+    lines = __remove_verbose_log(stdout.splitlines())
     assert lines == [
-        'Checking {} ...'.format(test_file),
-        'Defines:',
-        'Undefines:',
-        'Includes:',
-        'Platform:native'
+        'Checking {} ...'.format(test_file)
     ]
     lines = stderr.splitlines()
     # ignore the first line, stating that the addon failed to run properly
@@ -725,13 +732,9 @@ typedef int MISRA_5_6_VIOLATION;
 
     exitcode, stdout, stderr = cppcheck(args)
     assert exitcode == 0  # TODO: needs to be 1
-    lines = stdout.splitlines()
+    lines = __remove_verbose_log(stdout.splitlines())
     assert lines == [
-        'Checking {} ...'.format(test_file),
-        'Defines:',
-        'Undefines:',
-        'Includes:',
-        'Platform:native'
+        'Checking {} ...'.format(test_file)
     ]
     """
 /tmp/pytest-of-user/pytest-11/test_invalid_addon_py_20/file.cpp:0:0: error: Bailing out from analysis: Checking file failed: Failed to execute addon 'addon1' - exitcode is 1: python3 /home/user/CLionProjects/cppcheck/addons/runaddon.py /tmp/pytest-of-user/pytest-11/test_invalid_addon_py_20/addon1.py --cli /tmp/pytest-of-user/pytest-11/test_invalid_addon_py_20/file.cpp.24762.dump
@@ -1134,6 +1137,97 @@ def test_file_duplicate_2(tmpdir):
     assert stderr == ''
 
 
+def test_file_duplicate_3(tmpdir):
+    test_file_a = os.path.join(tmpdir, 'a.c')
+    with open(test_file_a, 'wt'):
+        pass
+
+    # multiple ways to specify the same file
+    in_file_a = 'a.c'
+    in_file_b = os.path.join('.', 'a.c')
+    in_file_c = os.path.join('dummy', '..', 'a.c')
+    in_file_d = os.path.join(tmpdir, 'a.c')
+    in_file_e = os.path.join(tmpdir, '.', 'a.c')
+    in_file_f = os.path.join(tmpdir, 'dummy', '..', 'a.c')
+
+    args = [in_file_a, in_file_b, in_file_c, in_file_d, in_file_e, in_file_f, str(tmpdir)]
+    args.append('-j1') # TODO: remove when fixed
+
+    exitcode, stdout, stderr = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 0
+    lines = stdout.splitlines()
+    # TODO: only a single file should be checked
+    if sys.platform == 'win32':
+        assert lines == [
+            'Checking {} ...'.format('a.c'),
+            '1/6 files checked 0% done',
+            'Checking {} ...'.format('a.c'),
+            '2/6 files checked 0% done',
+            'Checking {} ...'.format('a.c'),
+            '3/6 files checked 0% done',
+            'Checking {} ...'.format(test_file_a),
+            '4/6 files checked 0% done',
+            'Checking {} ...'.format(test_file_a),
+            '5/6 files checked 0% done',
+            'Checking {} ...'.format(test_file_a),
+            '6/6 files checked 0% done'
+        ]
+    else:
+        assert lines == [
+            'Checking {} ...'.format('a.c'),
+            '1/4 files checked 0% done',
+            'Checking {} ...'.format('a.c'),
+            '2/4 files checked 0% done',
+            'Checking {} ...'.format(test_file_a),
+            '3/4 files checked 0% done',
+            'Checking {} ...'.format(test_file_a),
+            '4/4 files checked 0% done'
+        ]
+    assert stderr == ''
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason="requires Windows")
+def test_file_duplicate_4(tmpdir):
+    test_file_a = os.path.join(tmpdir, 'a.c')
+    with open(test_file_a, 'wt'):
+        pass
+
+    # multiple ways to specify the same file
+    in_file_a = 'a.c'
+    in_file_b = os.path.join('.', 'a.c')
+    in_file_c = os.path.join('dummy', '..', 'a.c')
+    in_file_d = os.path.join(tmpdir, 'a.c')
+    in_file_e = os.path.join(tmpdir, '.', 'a.c')
+    in_file_f = os.path.join(tmpdir, 'dummy', '..', 'a.c')
+
+    args1 = [in_file_a, in_file_b, in_file_c, in_file_d, in_file_e, in_file_f, str(tmpdir)]
+    args2 = []
+    for a in args1:
+        args2.append(a.replace('\\', '/'))
+    args = args1 + args2
+    args.append('-j1') # TODO: remove when fixed
+
+    exitcode, stdout, stderr = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 0
+    lines = stdout.splitlines()
+    # TODO: only a single file should be checked
+    assert lines == [
+        'Checking {} ...'.format('a.c'),
+        '1/6 files checked 0% done',
+        'Checking {} ...'.format('a.c'),
+        '2/6 files checked 0% done',
+        'Checking {} ...'.format('a.c'),
+        '3/6 files checked 0% done',
+        'Checking {} ...'.format(test_file_a),
+        '4/6 files checked 0% done',
+        'Checking {} ...'.format(test_file_a),
+        '5/6 files checked 0% done',
+        'Checking {} ...'.format(test_file_a),
+        '6/6 files checked 0% done'
+    ]
+    assert stderr == ''
+
+
 def test_file_ignore(tmpdir):
     test_file = os.path.join(tmpdir, 'test.cpp')
     with open(test_file, 'wt'):
@@ -1463,7 +1557,7 @@ def test_filelist(tmpdir):
     ]
     assert len(expected), len(lines)
     for i in range(1, len(expected)+1):
-        lines.remove('{}/11 files checked 0% done'.format(i, len(expected)))
+        lines.remove('{}/{} files checked 0% done'.format(i, len(expected)))
     assert lines == expected
 
 
@@ -1497,12 +1591,16 @@ def test_cpp_probe(tmpdir):
         ])
 
     args = ['-q', '--template=simple', '--cpp-header-probe', '--verbose', test_file]
-    err_lines = [
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    lines = stdout.splitlines()
+    assert lines == []
+    lines = stderr.splitlines()
+    assert lines == [
         # TODO: fix that awkward format
         "{}:1:1: error: Code 'classA{{' is invalid C code.: Use --std, -x or --language to enforce C++. Or --cpp-header-probe to identify C++ headers via the Emacs marker. [syntaxError]".format(test_file)
     ]
-
-    assert_cppcheck(args, ec_exp=0, err_exp=err_lines, out_exp=[])
 
 
 def test_cpp_probe_2(tmpdir):
@@ -1516,3 +1614,117 @@ def test_cpp_probe_2(tmpdir):
     args = ['-q', '--template=simple', '--cpp-header-probe', test_file]
 
     assert_cppcheck(args, ec_exp=0, err_exp=[], out_exp=[])
+
+
+# TODO: test with FILESDIR
+def test_lib_lookup(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--library=gnu', '--debug-lookup', test_file])
+    exepath = os.path.dirname(exe)
+    if sys.platform == 'win32':
+        exepath = exepath.replace('\\', '/')
+    assert exitcode == 0, stdout
+    lines = __remove_std_lookup_log(stdout.splitlines(), exepath)
+    assert lines == [
+        "looking for library 'gnu'",
+        "looking for library 'gnu.cfg'",
+        "looking for library '{}/gnu.cfg'".format(exepath),
+        "looking for library '{}/cfg/gnu.cfg'".format(exepath),
+        'Checking {} ...'.format(test_file)
+    ]
+
+
+# TODO: test with FILESDIR
+def test_lib_lookup_notfound(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--library=none', '--debug-lookup', test_file])
+    exepath = os.path.dirname(exe)
+    if sys.platform == 'win32':
+        exepath = exepath.replace('\\', '/')
+    assert exitcode == 1, stdout
+    lines = __remove_std_lookup_log(stdout.splitlines(), exepath)
+    assert lines == [
+        "looking for library 'none'",
+        "looking for library 'none.cfg'",
+        "looking for library '{}/none.cfg'".format(exepath),
+        "looking for library '{}/cfg/none.cfg'".format(exepath),
+        "library not found: 'none'",
+        "cppcheck: Failed to load library configuration file 'none'. File not found"
+    ]
+
+
+def test_lib_lookup_absolute(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    cfg_file = os.path.join(tmpdir, 'test.cfg')
+    with open(cfg_file, 'wt') as f:
+        f.write('''
+<?xml version="1.0"?>
+<def format="2">
+</def>
+        ''')
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--library={}'.format(cfg_file), '--debug-lookup', test_file])
+    exepath = os.path.dirname(exe)
+    if sys.platform == 'win32':
+        exepath = exepath.replace('\\', '/')
+    assert exitcode == 0, stdout
+    lines = __remove_std_lookup_log(stdout.splitlines(), exepath)
+    assert lines == [
+        "looking for library '{}'".format(cfg_file),
+        'Checking {} ...'.format(test_file)
+    ]
+
+
+def test_lib_lookup_absolute_notfound(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    cfg_file = os.path.join(tmpdir, 'test.cfg')
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--library={}'.format(cfg_file), '--debug-lookup', test_file])
+    exepath = os.path.dirname(exe)
+    if sys.platform == 'win32':
+        exepath = exepath.replace('\\', '/')
+    assert exitcode == 1, stdout
+    lines = __remove_std_lookup_log(stdout.splitlines(), exepath)
+    assert lines == [
+        "looking for library '{}'".format(cfg_file),
+        "library not found: '{}'".format(cfg_file),
+        "cppcheck: Failed to load library configuration file '{}'. File not found".format(cfg_file)
+    ]
+
+
+def test_lib_lookup_nofile(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    # make sure we do not produce an error when the attempted lookup path is a directory and not a file
+    gtk_dir = os.path.join(tmpdir, 'gtk')
+    os.mkdir(gtk_dir)
+    gtk_cfg_dir = os.path.join(tmpdir, 'gtk.cfg')
+    os.mkdir(gtk_cfg_dir)
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--library=gtk', '--debug-lookup', test_file], cwd=tmpdir)
+    exepath = os.path.dirname(exe)
+    if sys.platform == 'win32':
+        exepath = exepath.replace('\\', '/')
+    assert exitcode == 0, stdout
+    lines = __remove_std_lookup_log(stdout.splitlines(), exepath)
+    assert lines == [
+        "looking for library 'gtk'",
+        "looking for library 'gtk.cfg'",
+        "looking for library '{}/gtk.cfg'".format(exepath),
+        "looking for library '{}/cfg/gtk.cfg'".format(exepath),
+        'Checking {} ...'.format(test_file)
+    ]

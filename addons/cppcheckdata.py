@@ -677,7 +677,7 @@ class Function:
         self.argumentId = {}
 
     def __repr__(self):
-        attrs = ["Id", "tokenId", "tokenDefId", "name", "type", "hasVirtualSpecifier", 
+        attrs = ["Id", "tokenId", "tokenDefId", "name", "type", "hasVirtualSpecifier",
                  "isImplicitlyVirtual", "access", "isInlineKeyword", "isStatic", 
                  "isAttributeNoreturn", "overriddenFunction", "nestedIn", "argumentId"]
         return "{}({})".format(
@@ -901,7 +901,7 @@ class Value:
         self.symbolic = IdMap.get(self._symbolicId)
 
     def __repr__(self):
-        attrs = ["intvalue", "tokvalue", "floatvalue", "movedvalue", "uninit", 
+        attrs = ["intvalue", "tokvalue", "floatvalue", "movedvalue", "uninit",
                  "bufferSize", "containerSize", "condition", "valueKind"]
         return "{}({})".format(
             "Value",
@@ -999,7 +999,7 @@ class Suppression:
             return True
         # Other Suppression (Globaly set via suppression file or cli command)
         if ((self.fileName is None or fnmatch(file, self.fileName))
-                and (self.suppressionType is None) 
+                and (self.suppressionType is None)
                 and (self.symbolName is None or fnmatch(message, '*'+self.symbolName+'*'))
                 and fnmatch(errorId, self.errorId)):
             return True
@@ -1281,6 +1281,9 @@ class CppcheckData:
         # Iterating <typedef-info>
         iter_typedef_info = False
 
+        # Iterating <directive>
+        iter_directive = False
+
         # Use iterable objects to traverse XML tree for dump files incrementally.
         # Iterative approach is required to avoid large memory consumption.
         # Calling .clear() is necessary to let the element be garbage collected.
@@ -1312,8 +1315,12 @@ class CppcheckData:
                 cfg.standards.set_posix(node)
 
             # Parse directives list
-            elif node.tag == 'directive' and event == 'start':
-                cfg.directives.append(Directive(node))
+            elif node.tag == 'directive':
+                if event == 'start':
+                    cfg.directives.append(Directive(node))
+                    iter_directive = True
+                elif event == 'end':
+                    iter_directive = False
             # Parse macro usage
             elif node.tag == 'macro' and event == 'start':
                 cfg.macro_usage.append(MacroUsage(node))
@@ -1325,7 +1332,7 @@ class CppcheckData:
             # Parse tokens
             elif node.tag == 'tokenlist' and event == 'start':
                 continue
-            elif node.tag == 'token' and event == 'start':
+            elif node.tag == 'token' and event == 'start' and not iter_directive:
                 cfg.tokenlist.append(Token(node))
 
             # Parse scopes

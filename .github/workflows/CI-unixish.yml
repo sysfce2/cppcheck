@@ -33,7 +33,7 @@ jobs:
       CCACHE_SLOPPINESS: pch_defines,time_macros
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.11
@@ -95,7 +95,7 @@ jobs:
       CCACHE_SLOPPINESS: pch_defines,time_macros
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.11
@@ -112,13 +112,13 @@ jobs:
       # TODO: bail out on warnings with latest GCC
       - name: Set up GCC
         uses: egor-tensin/setup-gcc@v1
-        if: matrix.os == 'ubuntu-22.04'
+        if: false  # matrix.os == 'ubuntu-22.04'
         with:
           version: 13
           platform: x64
 
       - name: Select compiler
-        if: matrix.os == 'ubuntu-22.04'
+        if: false  # matrix.os == 'ubuntu-22.04'
         run: |
           echo "CXX=g++-13" >> $GITHUB_ENV
 
@@ -168,7 +168,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.11
@@ -200,7 +200,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.11
@@ -232,7 +232,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # coreutils contains "g++" (default is "c++") and "nproc"
       - name: Install missing software on macos
@@ -255,7 +255,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install missing software on ubuntu
         if: contains(matrix.os, 'ubuntu')
@@ -342,7 +342,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.11
@@ -502,7 +502,7 @@ jobs:
     runs-on: ubuntu-22.04 # run on the latest image only
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2.11
