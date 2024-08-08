@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2024 Cppcheck team.
  *
@@ -131,18 +131,6 @@ struct CPPCHECKLIB ProgramMemory {
     bool empty() const;
 
     void replace(ProgramMemory pm);
-
-    Map::iterator begin() {
-        copyOnWrite();
-
-        return mValues->begin();
-    }
-
-    Map::iterator end() {
-        copyOnWrite();
-
-        return mValues->end();
-    }
 
     Map::const_iterator begin() const {
         return mValues->cbegin();

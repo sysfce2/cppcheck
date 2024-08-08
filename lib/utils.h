@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2024 Cppcheck team.
  *
@@ -398,5 +398,13 @@ static inline T* empty_if_null(T* p)
  * @return The list of seperate strings (including empty ones). The whole input string if no seperator found.
  */
 CPPCHECKLIB std::list<std::string> splitString(const std::string& str, char sep);
+
+namespace utils {
+    template<class T>
+    constexpr typename std::add_const<T>::type & as_const(T& t) noexcept
+    {
+        return t;
+    }
+}
 
 #endif

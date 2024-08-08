@@ -1327,7 +1327,7 @@ namespace {
         ValueFlow::Value executeMultiCondition(bool b, const Token* expr)
         {
             if (pm->hasValue(expr->exprId())) {
-                const ValueFlow::Value& v = pm->at(expr->exprId());
+                const ValueFlow::Value& v = utils::as_const(*pm).at(expr->exprId());
                 if (v.isIntValue())
                     return v;
             }
@@ -1572,12 +1572,15 @@ namespace {
 
                 return unknown();
             } else if (expr->str() == "(" && expr->isCast()) {
-                if (Token::simpleMatch(expr->previous(), ">") && expr->linkAt(-1))
-                    return execute(expr->astOperand2());
+                if (expr->astOperand2()) {
+                    if (expr->astOperand1()->str() != "dynamic_cast")
+                        return execute(expr->astOperand2());
+                    return unknown();
+                }
                 return execute(expr->astOperand1());
             }
             if (expr->exprId() > 0 && pm->hasValue(expr->exprId())) {
-                ValueFlow::Value result = pm->at(expr->exprId());
+                ValueFlow::Value result = utils::as_const(*pm).at(expr->exprId());
                 if (result.isImpossible() && result.isIntValue() && result.intvalue == 0 && isUsedAsBool(expr, *settings)) {
                     result.intvalue = !result.intvalue;
                     result.setKnown();
@@ -1693,7 +1696,7 @@ namespace {
             if (!expr)
                 return v;
             if (expr->exprId() > 0 && pm->hasValue(expr->exprId())) {
-                if (updateValue(v, pm->at(expr->exprId())))
+                if (updateValue(v, utils::as_const(*pm).at(expr->exprId())))
                     return v;
             }
             // Find symbolic values
@@ -1704,7 +1707,7 @@ namespace {
                     continue;
                 if (value.tokvalue->exprId() > 0 && !pm->hasValue(value.tokvalue->exprId()))
                     continue;
-                ValueFlow::Value v2 = pm->at(value.tokvalue->exprId());
+                ValueFlow::Value v2 = utils::as_const(*pm).at(value.tokvalue->exprId());
                 if (!v2.isIntValue() && value.intvalue != 0)
                     continue;
                 v2.intvalue += value.intvalue;

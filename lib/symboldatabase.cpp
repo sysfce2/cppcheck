@@ -2252,7 +2252,7 @@ Variable::~Variable()
     delete mValueType;
 }
 
-Variable& Variable::operator=(const Variable &var)
+Variable& Variable::operator=(const Variable &var) &
 {
     if (this == &var)
         return *this;
@@ -2531,8 +2531,10 @@ Function::Function(const Token *tok,
                tokenDef->str().size() > scope->className.size() + 1 &&
                tokenDef->str()[scope->className.size() + 1] == '<'))) {
         // destructor
-        if (tokenDef->strAt(-1) == "~")
+        if (tokenDef->strAt(-1) == "~") {
             type = Function::eDestructor;
+            isNoExcept(true);
+        }
         // constructor of any kind
         else
             type = Function::eConstructor;
