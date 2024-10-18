@@ -467,7 +467,7 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
             conditionAlwaysTrueOrFalse(tok->next()->astOperand2(), variableValue, &alwaysTrue, &alwaysFalse);
 
             // initialization / usage in condition..
-            if (!alwaysTrue && checkIfForWhileHead(tok->next(), var, suppressErrors, bool(number_of_if == 0), *alloc, membervar))
+            if (!alwaysTrue && checkIfForWhileHead(tok->next(), var, suppressErrors, (number_of_if == 0), *alloc, membervar))
                 return true;
 
             // checking if a not-zero variable is zero => bail out
@@ -643,7 +643,7 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
                 bool initcond = false;
                 if (!suppressErrors) {
                     const Token *startCond = forwhile ? tok->next() : tok->linkAt(1)->tokAt(2);
-                    initcond = checkIfForWhileHead(startCond, var, false, bool(number_of_if == 0), *alloc, membervar);
+                    initcond = checkIfForWhileHead(startCond, var, false, (number_of_if == 0), *alloc, membervar);
                 }
 
                 // goto "}"
@@ -1747,7 +1747,8 @@ bool CheckUninitVar::analyseWholeProgram(const CTU::FileInfo *ctu, const std::li
                                             callsMap,
                                             "Using argument ARG",
                                             &functionCall,
-                                            false);
+                                            false,
+                                            settings.maxCtuDepth);
             if (locationList.empty())
                 continue;
 

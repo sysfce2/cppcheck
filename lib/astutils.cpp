@@ -1547,8 +1547,12 @@ bool compareTokenFlags(const Token* tok1, const Token* tok2, bool macro) {
     if (macro) {
         if (tok1->isExpandedMacro() != tok2->isExpandedMacro())
             return false;
-        if (tok1->isExpandedMacro() && tok1->getMacroName() != tok2->getMacroName())
-            return false;
+        if (tok1->isExpandedMacro()) { // both are macros
+            if (tok1->getMacroName() != tok2->getMacroName())
+                return false;
+            if (tok1->astParent() && tok2->astParent() && tok1->astParent()->isExpandedMacro() && tok1->astParent()->getMacroName() == tok2->astParent()->getMacroName())
+                return false;
+        }
         if (tok1->isTemplateArg() || tok2->isTemplateArg())
             return false;
     }
@@ -2601,7 +2605,7 @@ bool isVariableChanged(const Token *tok, int indirect, const Settings &settings,
     const Token *tok2 = tok;
     int derefs = 0;
     while ((tok2->astParent() && tok2->astParent()->isUnaryOp("*")) ||
-           (Token::simpleMatch(tok2->astParent(), ".") && !Token::simpleMatch(tok2->astParent()->astParent(), "(")) ||
+           (Token::simpleMatch(tok2->astParent(), ".") && !Token::Match(tok2->astParent()->astParent(), "[(,]")) ||
            (tok2->astParent() && tok2->astParent()->isUnaryOp("&") && Token::simpleMatch(tok2->astParent()->astParent(), ".") && tok2->astParent()->astParent()->originalName()=="->") ||
            (Token::simpleMatch(tok2->astParent(), "[") && tok2 == tok2->astParent()->astOperand1())) {
         if (tok2->astParent() && (tok2->astParent()->isUnaryOp("*") || (astIsLHS(tok2) && tok2->astParent()->originalName() == "->")))
